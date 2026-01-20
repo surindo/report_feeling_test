@@ -143,8 +143,7 @@ async function loadData(tgl) {
   const { data, error } = await supabase
     .from("responses")
     .select("*")
-    .eq("tgl", tgl)
-    .eq("sesi", 1);
+    .eq("tgl", tgl);
 
   if (error || !data) return;
 
@@ -316,5 +315,6 @@ document.getElementById("exportExcel").addEventListener("click", () => {
 </script>
 </body>
 </html>
+
 
 
