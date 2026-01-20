@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Feeling Test Report</title>
+<link rel="shortcut icon" href="logo.ico">
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+
+<style>
+:root {
+  --dunlop-yellow: #FFD200;
+  --dunlop-black: #111;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f2f2;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 30px auto;
+  background: #fff;
+  border-top: 6px solid var(--dunlop-yellow);
+}
+
+.header {
+  background: var(--dunlop-black);
+  color: var(--dunlop-yellow);
+  padding: 15px 20px;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.content {
+  padding: 20px;
+}
+
+.filter {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+button {
+  background: var(--dunlop-yellow);
+  border: none;
+  padding: 8px 14px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 6px;
+  text-align: center;
+}
+
+thead tr:first-child {
+  background: var(--dunlop-black);
+  color: var(--dunlop-yellow);
+}
+
+thead tr:last-child {
+  background: var(--dunlop-yellow);
+}
+
+tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+tfoot {
+  background: #eee;
+  font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+  <div class="header">FEELING TEST REPORT</div>
+
+  <div class="content">
+    <div class="filter">
+      <div>
+        <label>Tanggal :</label>
+        <input type="date" id="filter-date">
+      </div>
+      <button id="exportExcel">EXPORT EXCEL</button>
+    </div>
+
+    <table id="reportTable">
+      <thead>
+        <tr>
+          <th rowspan="2">Participant</th>
+          <th colspan="2">Stability</th>
+          <th colspan="2">Comfort</th>
+          <th colspan="2">Noise</th>
+        </tr>
+        <tr>
+          <th>Dunlop</th>
+          <th>Competitor</th>
+          <th>Dunlop</th>
+          <th>Competitor</th>
+          <th>Dunlop</th>
+          <th>Competitor</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+      <tfoot id="table-foot"></tfoot>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js";
+
+/* ================= SUPABASE ================= */
+const supabase = createClient(
+  "https://eysofbxczoaesihxpelb.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5c29mYnhjem9hZXNpaHhwZWxiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNjM4MjIsImV4cCI6MjA3ODYzOTgyMn0.X4Nec16yXjcrQtpUzAlkwJDgQKHKz8lqU4WF7kjp2KU"
+);
+const dateInput = document.getElementById("filter-date");
+const tbody = document.getElementById("table-body");
+const tfoot = document.getElementById("table-foot");
+
+/* ================= INIT ================= */
+dateInput.value = new Date().toISOString().split("T")[0];
+loadData(dateInput.value);
+dateInput.addEventListener("change", e => loadData(e.target.value));
+
+/* ================= LOAD DATA ================= */
+async function loadData(tgl) {
+  tbody.innerHTML = "";
+  tfoot.innerHTML = "";
+
+  const { data, error } = await supabase
+    .from("responses")
+    .select("*")
+    .eq("tgl", tgl)
+    .eq("sesi", 1);
+
+  if (error || !data) return;
+
+  const merged = mergeData(data);
+  const sorted = sortByParticipant(merged);
+  renderTable(sorted);
+}
+
+/* ================= MERGE ================= */
+function mergeData(rows) {
+  const map = {};
+
+  rows.forEach(r => {
+    const key = `${r.name}-${r.sesi}-${r.tgl}`;
+
+    if (!map[key]) {
+      map[key] = {
+        name: r.name,
+        ds: null, ks: null,
+        dc: null, kc: null,
+        dn: null, kn: null
+      };
+    }
+
+    if (r.type === "Zenix") {
+      map[key].ds = num(r.dunlop_stability);
+      map[key].ks = num(r.komp_stability);
+    }
+
+    if (r.type === "M6") {
+      map[key].dc = num(r.dunlop_comfort);
+      map[key].kc = num(r.komp_comfort);
+      map[key].dn = num(r.dunlop_noise);
+      map[key].kn = num(r.komp_noise);
+    }
+  });
+
+  return Object.values(map);
+}
+
+/* ================= SORT A1 A2 A10 ================= */
+function sortByParticipant(data) {
+  return data.sort((a, b) => {
+    const aMatch = a.name.match(/^([A-Za-z]+)(\d+)$/);
+    const bMatch = b.name.match(/^([A-Za-z]+)(\d+)$/);
+
+    const aPrefix = aMatch ? aMatch[1] : a.name;
+    const bPrefix = bMatch ? bMatch[1] : b.name;
+
+    if (aPrefix !== bPrefix) {
+      return aPrefix.localeCompare(bPrefix);
+    }
+
+    const aNum = aMatch ? parseInt(aMatch[2], 10) : 0;
+    const bNum = bMatch ? parseInt(bMatch[2], 10) : 0;
+
+    return aNum - bNum;
+  });
+}
+
+
+/* ================= RENDER ================= */
+function renderTable(data) {
+  let sum = { ds:0, ks:0, dc:0, kc:0, dn:0, kn:0, c:0 };
+
+  data.forEach(r => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${r.name}</td>
+        <td>${fmt(r.ds)}</td>
+        <td>${fmt(r.ks)}</td>
+        <td>${fmt(r.dc)}</td>
+        <td>${fmt(r.kc)}</td>
+        <td>${fmt(r.dn)}</td>
+        <td>${fmt(r.kn)}</td>
+      </tr>
+    `;
+
+    if (r.ds !== null) {
+      sum.ds+=r.ds; sum.ks+=r.ks;
+      sum.dc+=r.dc; sum.kc+=r.kc;
+      sum.dn+=r.dn; sum.kn+=r.kn;
+      sum.c++;
+    }
+  });
+
+  tfoot.innerHTML = `
+    <tr>
+      <td>AVE</td>
+      <td>${avg(sum.ds,sum.c)}</td>
+      <td>${avg(sum.ks,sum.c)}</td>
+      <td>${avg(sum.dc,sum.c)}</td>
+      <td>${avg(sum.kc,sum.c)}</td>
+      <td>${avg(sum.dn,sum.c)}</td>
+      <td>${avg(sum.kn,sum.c)}</td>
+    </tr>
+  `;
+}
+
+/* ================= HELPER ================= */
+const num = v => (v === null || v === 0) ? null : parseFloat(v);
+const fmt = v => v === null ? "-" : v.toFixed(2);
+const avg = (s,c) => c === 0 ? "-" : (s/c).toFixed(2);
+
+/* ================= EXPORT XLSX ================= */
+document.getElementById("exportExcel").addEventListener("click", () => {
+  const table = document.getElementById("reportTable");
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.table_to_sheet(table);
+
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+
+  const borderStyle = {
+    top:    { style: "thin" },
+    bottom: { style: "thin" },
+    left:   { style: "thin" },
+    right:  { style: "thin" }
+  };
+
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[cellRef]) continue;
+
+      ws[cellRef].s = {
+        alignment: {
+          horizontal: "center",
+          vertical: "center",
+          wrapText: true
+        },
+        border: borderStyle
+      };
+
+      // HEADER STYLE
+      if (R <= 1) {
+        ws[cellRef].s.font = { bold: true };
+        ws[cellRef].s.fill = {
+          fgColor: { rgb: "FFD200" }
+        };
+      }
+
+      // AVE ROW
+      if (ws[cellRef].v === "AVE") {
+        ws[cellRef].s.font = { bold: true };
+      }
+    }
+  }
+
+  // Auto column width
+  ws["!cols"] = Array(range.e.c + 1).fill({ wch: 15 });
+
+  XLSX.utils.book_append_sheet(wb, ws, "Report");
+
+  // ===== FILE NAME BASED ON DATE =====
+  const dateVal = document.getElementById("filter-date").value;
+  const d = new Date(dateVal);
+  const fileDate = d.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short"
+  });
+
+  XLSX.writeFile(
+    wb,
+    `Tarikan Feeling Test ${fileDate}.xlsx`
+  );
+});
+
+
+</script>
+</body>
+</html>
+
+
